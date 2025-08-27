@@ -1,6 +1,5 @@
 # Cypher Matrix
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![Build Status](https://img.shields.io/badge/Build-Pending-orange.svg)](https://github.com/yourusername/enhanced-deepfake-detection/actions)
 [![Issues](https://img.shields.io/github/issues/yourusername/enhanced-deepfake-detection.svg)](https://github.com/yourusername/enhanced-deepfake-detection/issues)
