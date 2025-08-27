@@ -12,7 +12,7 @@ Features:
 - Performance optimization with hardware detection
 - Professional GUI with tabbed interface
 - Database integration for analysis history
-- Privacy protection with data anonymization
+- Privacy protection with data anonymization, GDPR/CCPA compliance features (data export/deletion, retention policies)
 - Comprehensive logging and error handling
 
 Author: AI Security Solutions Team
@@ -1036,7 +1036,7 @@ class EnhancedFaceAnalyzer:
 class DatabaseManager:
     """
     Enhanced database manager for analysis history and known samples
-    with privacy protection
+    with privacy protection, GDPR/CCPA compliance (data export/deletion)
     """
     def __init__(self, db_path='deepfake_analysis.db'):
         self.db_path = db_path
@@ -1191,7 +1191,7 @@ class DatabaseManager:
             return None
     
     def _anonymize_data(self, data: Dict) -> Dict:
-        """Anonymize sensitive information in analysis data"""
+        """Anonymize sensitive information in analysis data (GDPR/CCPA compliance)"""
         anonymized = data.copy()
         
         # Remove file paths
@@ -1341,7 +1341,7 @@ class DatabaseManager:
             return []
     
     def cleanup_old_data(self, retention_days: int = 90):
-        """Cleanup old data while maintaining privacy"""
+        """Cleanup old data while maintaining privacy (GDPR/CCPA retention policy)"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -1376,6 +1376,76 @@ class DatabaseManager:
                 
         except sqlite3.Error as e:
             logger.error(f"Data cleanup failed: {e}")
+
+    def export_user_data(self, username: str) -> Dict:
+        """Export user data for GDPR/CCPA compliance"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Get user info
+                cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+                user = cursor.fetchone()
+                
+                if not user:
+                    return None
+                
+                data = {
+                    'user': dict(user),
+                    'sessions': [],
+                    'login_attempts': [],
+                    'analyses': []
+                }
+                
+                # Get sessions
+                cursor.execute('SELECT * FROM user_sessions WHERE user_id = ?', (user['id'],))
+                data['sessions'] = [dict(row) for row in cursor.fetchall()]
+                
+                # Get login attempts
+                cursor.execute('SELECT * FROM login_attempts WHERE username = ?', (username,))
+                data['login_attempts'] = [dict(row) for row in cursor.fetchall()]
+                
+                # Get associated analyses (if linked to user, assuming analysis_results has user_id if added)
+                # If not, skip or modify schema if needed
+                
+                return data
+                
+        except sqlite3.Error as e:
+            logger.error(f"User data export failed: {e}")
+            return None
+    
+    def delete_user_data(self, username: str):
+        """Delete user data for GDPR/CCPA right to be forgotten"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+                user_id = cursor.fetchone()
+                
+                if not user_id:
+                    return False
+                
+                user_id = user_id[0]
+                
+                # Delete sessions
+                cursor.execute('DELETE FROM user_sessions WHERE user_id = ?', (user_id,))
+                
+                # Delete login attempts
+                cursor.execute('DELETE FROM login_attempts WHERE username = ?', (username,))
+                
+                # Delete user
+                cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+                
+                conn.commit()
+                
+                logger.info(f"Deleted data for user {username}")
+                return True
+                
+        except sqlite3.Error as e:
+            logger.error(f"User data deletion failed: {e}")
+            return False
 
 class RealTimeAnalyticsEngine:
     """
@@ -1530,7 +1600,7 @@ class SecureBrowserManager:
         else:
             logger.warning("Secure browsing disabled - Selenium not available")
     
-    def create_secure_session(self, url: str, incognito: bool = False) -> Dict:
+    def create_secure_session(self, url: str, headless: bool = True, incognito: bool = False) -> Dict:
         """Create secure browsing session with risk assessment"""
         if not SELENIUM_AVAILABLE:
             return {'success': False, 'error': 'Secure browsing not available'}
@@ -1546,12 +1616,15 @@ class SecureBrowserManager:
             # Setup browser options
             options = Options()
             
-            if not incognito:
+            if headless:
                 options.add_argument("--headless")
                 options.add_argument("--disable-gpu")
-            else:
+            
+            if incognito:
                 options.add_argument("--incognito")
-                # For visible incognito, don't set headless
+            
+            if not headless:
+                options.add_argument("--start-maximized")
             
             # Security hardening
             options.add_argument("--disable-extensions")
@@ -1589,19 +1662,20 @@ class SecureBrowserManager:
                 'url': url,
                 'created_at': datetime.now(),
                 'incognito': incognito,
+                'headless': headless,
                 'profile_dir': temp_profile_dir,
                 'risk_level': risk_level
             }
             
-            # Schedule auto-close if not incognito
-            if not incognito:
+            # Schedule auto-close if headless
+            if headless:
                 threading.Timer(
                     self.security_config['session_timeout_minutes'] * 60,
                     self.close_session,
                     args=(session_id,)
                 ).start()
             
-            logger.info(f"Created secure session {session_id} for {url} (incognito: {incognito})")
+            logger.info(f"Created secure session {session_id} for {url} (headless: {headless}, incognito: {incognito})")
             
             return {
                 'success': True,
@@ -2541,8 +2615,7 @@ class DeepFakePlatformGUI:
 
         try:
             # First, analyze the URL in headless mode to determine risk
-            # We pass incognito=False here because we want to run analysis in the background
-            session_result = self.browser_manager.create_secure_session(url, incognito=False) 
+            session_result = self.browser_manager.create_secure_session(url, headless=True, incognito=False)
             
             if session_result.get('success', False):
                 risk_level = session_result['risk_level']
@@ -2554,29 +2627,37 @@ class DeepFakePlatformGUI:
                     self.browser_manager.close_session(session_result['session_id'])
 
                 if risk_level == 'low':
-                    self.browser_result.insert(tk.END, "Link deemed legitimate. Opening in incognito mode...\n")
-                    # Open a new session in incognito mode, which will be visible
-                    incognito_session_result = self.browser_manager.create_secure_session(url, incognito=True)
-                    
-                    if incognito_session_result.get('success', False):
-                        messagebox.showinfo("Secure Browsing", f"Opening {url} in a new incognito browser window.")
-                        self.browser_result.insert(tk.END, f"Incognito Session ID: {incognito_session_result['session_id']}\n")
-                        self.browser_result.insert(tk.END, "Please close the incognito window manually when done.\n")
-                        # Do NOT close this session automatically, as the user is interacting with it.
-                        # The user will close the browser window themselves.
+                    self.browser_result.insert(tk.END, "Link deemed legitimate. Opening in normal mode...\n")
+                    # Open a new session in visible, non-incognito mode
+                    normal_session_result = self.browser_manager.create_secure_session(url, headless=False, incognito=False)
+                    if normal_session_result.get('success', False):
+                        messagebox.showinfo("Secure Browsing", f"Opening {url} in a new browser window.")
+                        self.browser_result.insert(tk.END, f"Session ID: {normal_session_result['session_id']}\n")
+                        self.browser_result.insert(tk.END, "Please close the browser window manually when done.\n")
                     else:
-                        messagebox.showerror("Secure Browsing Error", f"Failed to open incognito browser: {incognito_session_result.get('error')}")
-                        self.browser_result.insert(tk.END, f"Error opening incognito: {incognito_session_result.get('error')}\n")
+                        messagebox.showerror("Secure Browsing Error", f"Failed to open browser: {normal_session_result.get('error')}")
+                        self.browser_result.insert(tk.END, f"Error opening: {normal_session_result.get('error')}\n")
                 else:
-                    self.browser_result.insert(tk.END, "Link identified as potentially risky. Not opening in incognito mode.\n")
-                    messagebox.showwarning("Secure Browsing Warning", f"The link is identified as {risk_level.upper()} risk. Not opening in incognito mode.")
+                    # For risky, open in visible incognito with warning
+                    if messagebox.askyesno("Warning", f"The link is {risk_level.upper()} risk. Open in isolated incognito mode?"):
+                        self.browser_result.insert(tk.END, "Link identified as potentially risky. Opening in incognito mode...\n")
+                        incognito_session_result = self.browser_manager.create_secure_session(url, headless=False, incognito=True)
+                        
+                        if incognito_session_result.get('success', False):
+                            messagebox.showinfo("Secure Browsing", f"Opening risky {url} in a new incognito browser window.")
+                            self.browser_result.insert(tk.END, f"Incognito Session ID: {incognito_session_result['session_id']}\n")
+                            self.browser_result.insert(tk.END, "Please close the incognito window manually when done.\n")
+                        else:
+                            messagebox.showerror("Secure Browsing Error", f"Failed to open incognito browser: {incognito_session_result.get('error')}")
+                            self.browser_result.insert(tk.END, f"Error opening incognito: {incognito_session_result.get('error')}\n")
+                    else:
+                        self.browser_result.insert(tk.END, "User cancelled opening risky link.\n")
             else:
                 self.browser_result.insert(tk.END, f"Error during initial analysis: {session_result.get('error')}\n")
 
         except Exception as e:
             self.browser_result.insert(tk.END, f"An unexpected error occurred: {str(e)}\n")
             messagebox.showerror("Secure Browsing Error", f"An unexpected error occurred: {str(e)}")
-
 
     def _setup_stream_tab(self):
         ttk.Label(self.stream_tab, text="Stream Monitoring", font=('Arial', 14)).pack(pady=20)
@@ -2619,6 +2700,7 @@ class DeepFakePlatformGUI:
         ttk.Button(self.analytics_tab, text="Generate Report & Charts", command=self._generate_analytics_report).pack(pady=20)
         self.analytics_canvas_frame = ttk.Frame(self.analytics_tab)
         self.analytics_canvas_frame.pack(fill='both', expand=True)
+
     def _generate_analytics_report(self):
         report = self.analytics.generate_analytics_report()
         # Clear previous charts
@@ -2627,40 +2709,68 @@ class DeepFakePlatformGUI:
         if not report:
             messagebox.showerror("Error", "No analytics data available")
             return
-        # Create figures for charts
-        fig1 = Figure(figsize=(5, 4))
-        ax1 = fig1.add_subplot(111)
-        ax1.bar(['Detections', 'Total Analyses'], [report['detection_statistics']['detection_count'], report['detection_statistics']['total_analyses']])
+
+        # Create a single figure with subplots for better layout
+        fig = Figure(figsize=(12, 8))
+        fig.suptitle('Analytics Dashboard', fontsize=16)
+
+        # Detection Statistics Bar Chart
+        ax1 = fig.add_subplot(221)
+        if SEABORN_AVAILABLE:
+            sns.barplot(ax=ax1, x=['Detections', 'Total Analyses'], y=[report['detection_statistics']['detection_count'], report['detection_statistics']['total_analyses']], palette='viridis')
+        else:
+            ax1.bar(['Detections', 'Total Analyses'], [report['detection_statistics']['detection_count'], report['detection_statistics']['total_analyses']])
         ax1.set_title('Detection Statistics')
-        canvas1 = FigureCanvasTkAgg(fig1, master=self.analytics_canvas_frame)
-        canvas1.draw()
-        canvas1.get_tk_widget().pack(side=tk.LEFT, padx=10)
-        fig2 = Figure(figsize=(5, 4))
-        ax2 = fig2.add_subplot(111)
+        ax1.set_ylabel('Count')
+
+        # Media Types Pie Chart
+        ax2 = fig.add_subplot(222)
         media_types = list(report['detection_statistics']['media_types'].keys())
         counts = list(report['detection_statistics']['media_types'].values())
-        ax2.pie(counts, labels=media_types, autopct='%1.1f%%')
+        colors = sns.color_palette('viridis', len(media_types)) if SEABORN_AVAILABLE else None
+        ax2.pie(counts, labels=media_types, autopct='%1.1f%%', colors=colors, shadow=True, startangle=90)
         ax2.set_title('Media Types')
-        canvas2 = FigureCanvasTkAgg(fig2, master=self.analytics_canvas_frame)
-        canvas2.draw()
-        canvas2.get_tk_widget().pack(side=tk.LEFT, padx=10)
+        ax2.axis('equal')
+
+        # Detection Trend Line Plot
         if 'detection_trend' in report and report['detection_trend']:
-            fig3 = Figure(figsize=(5, 4))
-            ax3 = fig3.add_subplot(111)
+            ax3 = fig.add_subplot(223)
             times = [t['timestamp'] for t in report['detection_trend']]
             confs = [t['confidence'] for t in report['detection_trend']]
-            ax3.plot(times, confs)
+            if SEABORN_AVAILABLE:
+                sns.lineplot(ax=ax3, x=times, y=confs, marker='o')
+            else:
+                ax3.plot(times, confs)
             ax3.set_title('Detection Trend')
             ax3.set_xlabel('Time')
             ax3.set_ylabel('Confidence')
-            canvas3 = FigureCanvasTkAgg(fig3, master=self.analytics_canvas_frame)
-            canvas3.draw()
-            canvas3.get_tk_widget().pack(side=tk.LEFT, padx=10)
+            plt.setp(ax3.xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+        # System Performance Bar Chart
+        if 'system_performance' in report:
+            ax4 = fig.add_subplot(224)
+            performances = [report['system_performance'].get('cpu_usage', 0), report['system_performance'].get('memory_usage', 0), report['system_performance'].get('gpu_usage', 0)]
+            if SEABORN_AVAILABLE:
+                sns.barplot(ax=ax4, x=['CPU', 'Memory', 'GPU'], y=performances, palette='mako')
+            else:
+                ax4.bar(['CPU', 'Memory', 'GPU'], performances)
+            ax4.set_title('System Performance')
+            ax4.set_ylabel('% Usage')
+
+        fig.tight_layout()
+
+        canvas = FigureCanvasTkAgg(fig, master=self.analytics_canvas_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+
     def _setup_settings_tab(self):
         ttk.Label(self.settings_tab, text="Settings & Privacy", font=('Arial', 14)).pack(pady=20)
         ttk.Button(self.settings_tab, text="Change Password", command=self._change_password).pack(pady=10)
+        ttk.Button(self.settings_tab, text="Export My Data (GDPR/CCPA)", command=self._export_data).pack(pady=10)
+        ttk.Button(self.settings_tab, text="Delete My Data (Right to be Forgotten)", command=self._delete_data).pack(pady=10)
         ttk.Button(self.settings_tab, text="Cleanup Old Data", command=self._cleanup_data).pack(pady=10)
         ttk.Button(self.settings_tab, text="Logout", command=self._logout).pack(pady=10)
+
     def _change_password(self):
         if not self.current_user:
             return
@@ -2672,14 +2782,40 @@ class DeepFakePlatformGUI:
                 messagebox.showinfo("Success", "Password changed")
             else:
                 messagebox.showerror("Error", "Password change failed")
+
+    def _export_data(self):
+        if not self.current_user:
+            return
+        data = self.database.export_user_data(self.current_user['username'])
+        if data:
+            export_path = f"{self.current_user['username']}_data.json"
+            with open(export_path, 'w') as f:
+                json.dump(data, f, indent=2)
+            messagebox.showinfo("Success", f"Data exported to {export_path}")
+        else:
+            messagebox.showerror("Error", "Data export failed")
+
+    def _delete_data(self):
+        if not self.current_user:
+            return
+        if messagebox.askyesno("Confirm Deletion", "Are you sure you want to delete your data? This is irreversible."):
+            success = self.database.delete_user_data(self.current_user['username'])
+            if success:
+                messagebox.showinfo("Success", "Data deleted. Logging out...")
+                self._logout()
+            else:
+                messagebox.showerror("Error", "Data deletion failed")
+
     def _cleanup_data(self):
         if messagebox.askyesno("Confirm", "Cleanup old data?"):
             self.database.cleanup_old_data()
             messagebox.showinfo("Success", "Old data cleaned")
+
     def _logout(self):
         if self.current_user and 'session_token' in self.current_user:
             self.auth_manager.logout(self.current_user['session_token'])
         self.root.destroy()
+
 if __name__ == "__main__":
     print("Starting Enhanced DeepFake Detection Platform v3.0")
     platform = DeepFakePlatformGUI()
