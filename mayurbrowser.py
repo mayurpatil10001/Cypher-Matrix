@@ -14,10 +14,6 @@ Features:
 - Database integration for analysis history
 - Privacy protection with data anonymization, GDPR/CCPA compliance features (data export/deletion, retention policies)
 - Comprehensive logging and error handling
-
-Author: AI Security Solutions Team
-Version: 3.0 Enhanced
-License: MIT
 """
 
 import os
